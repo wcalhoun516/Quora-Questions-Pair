@@ -205,7 +205,7 @@ def load_test(test_file='../downloads/test.csv'):
     testDF.ix[testDF['question2'].isnull(),['question1','question2']] = 'random empty question'
    
 
-def process_test(testDF=testDF, dense=1, stem=False):
+def process_test(BagofWordsExtractor,testDF=testDF, dense=1, stem=False):
     testloadStartTime = time.time()
 
     test_question1 = []
