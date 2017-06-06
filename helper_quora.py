@@ -1,3 +1,58 @@
+#####Basic Imports
+import time
+import pandas as pd
+import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
+import seaborn as sns
+import networkx as nx
+import codecs
+import csv
+import re
+from datetime import datetime
+import numpy.random as rnd
+# to make this notebook's output stable across runs
+rnd.seed(42)
+
+
+
+
+from string import punctuation
+#####Word Vectors
+from gensim import models
+from gensim.models import KeyedVectors
+from nltk.stem.wordnet import WordNetLemmatizer
+from nltk.stem import LancasterStemmer
+stemmer =  LancasterStemmer()
+lemmer = WordNetLemmatizer()
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import wordpunct_tokenize, RegexpTokenizer
+alpha_tokenizer = RegexpTokenizer('[A-Za-z]\w+')
+#####SKLEARN
+from sklearn import linear_model
+from sklearn.ensemble import RandomForestClassifier
+from sklearn import model_selection
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import log_loss
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import train_test_split
+
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+#####TENSORFLOW
+import tensorflow as tf
+from functools import partial
+from IPython.display import clear_output, Image, display, HTML
+
+
+##### This is the Helper File with all the function framework for building a Neural Net using Tensorflow on the Quora Question Pairs Problem
+
+
+
+
+
+
+
 def calculate_vif_(X, thresh=5.0):
     from statsmodels.stats.outliers_influence import variance_inflation_factor 
     variables = list(X.columns)
@@ -42,7 +97,7 @@ def word_vector(word_vector_file='../downloads/GoogleNews-vectors-negative300.bi
 
 
 
-def text_to_wordlist(text, remove_stop_words=True, stem_words=False):
+def text_to_wordlist(text, stop_words, remove_stop_words=True, stem_words=False):
     # Clean the text, with the option to remove stop_words and to stem words.
 
     # Clean the text
@@ -123,15 +178,15 @@ def text_to_wordlist(text, remove_stop_words=True, stem_words=False):
 
 
 
-def process_questions(question_list, questions, question_list_name, dataframe, stem=False):
+def process_questions(question_list, questions, question_list_name, dataframe, stop_words,stem=False):
     '''transform questions and display progress'''
     for question in questions:
-        question_list.append(text_to_wordlist(question, stem_words=stem))
+        question_list.append(text_to_wordlist(question, stem_words=stem,stop_words=stop_words))
         
 
 
 
-def clean_up_(stem=False):
+def clean_up(trainDF, valDF,stem=False):
     cleanUpStartTime = time.time()
 
     stop_words = ['the','a','an','and','but','if','or','because','as','what','which','this','that','these','those','then',
@@ -139,21 +194,22 @@ def clean_up_(stem=False):
               'Is','If','While','This']
 
     train_question1 = []
-    process_questions(train_question1, trainDF.question1, 'train_question1', trainDF, stem=stem)
+    process_questions(train_question1, trainDF.question1, 'train_question1', trainDF, stem=stem, stop_words=stop_words)
     train_question2 = []
-    process_questions(train_question2, trainDF.question2, 'train_question2', trainDF, stem=stem)
+    process_questions(train_question2, trainDF.question2, 'train_question2', trainDF, stem=stem, stop_words=stop_words)
 
     val_question1 = []
-    process_questions(val_question1, valDF.question1, 'train_question1', valDF, stem=stem)
+    process_questions(val_question1, valDF.question1, 'train_question1', valDF, stem=stem, stop_words=stop_words)
     val_question2 = []
-    process_questions(val_question2, valDF.question2, 'train_question2', valDF, stem=stem)
+    process_questions(val_question2, valDF.question2, 'train_question2', valDF, stem=stem, stop_words=stop_words)
 
     cleanUpDurationInMinutes = (time.time()-cleanUpStartTime)/60.0
     print("Clean Up took %.2f minutes" % (cleanUpDurationInMinutes))
+    return train_question1, train_question2, val_question1, val_question2
 
 
 
-def BOW(max_df=0.999, min_df=50, maxNumFeatures=1000, ngrams=(1,5), analyzer='char', binary_flag=True, lowercase_flag=True, dense=1):
+def BOW(train_data, val_data,train_question1, train_question2, val_question1, val_question2, max_df=0.999, min_df=50, maxNumFeatures=1000, ngrams=(1,5), analyzer='char', binary_flag=True, lowercase_flag=True, dense=1):
     #%% create dictionary and extract BOW features from questions
     featureExtractionStartTime = time.time()
     # bag of letter sequences (chars or words) -- Char Works Better
@@ -170,48 +226,55 @@ def BOW(max_df=0.999, min_df=50, maxNumFeatures=1000, ngrams=(1,5), analyzer='ch
     trainQuestion2_BOW_rep = BagOfWordsExtractor.transform(np.array(train_question2))
     valQuestion1_BOW_rep = BagOfWordsExtractor.transform(np.array(val_question1))
     valQuestion2_BOW_rep = BagOfWordsExtractor.transform(np.array(val_question2))
-    train_lables = np.array(trainDF.ix[:,'is_duplicate'])
-    val_lables = np.array(valDF.ix[:,'is_duplicate'])
+    train_lables = np.array(train_data.ix[:,'is_duplicate'])
+    val_lables = np.array(val_data.ix[:,'is_duplicate'])
 
 
     X_train = -(trainQuestion1_BOW_rep != trainQuestion2_BOW_rep).astype(float) + trainQuestion1_BOW_rep.multiply(trainQuestion2_BOW_rep).astype(float)
     X_val = -(valQuestion1_BOW_rep != valQuestion2_BOW_rep).astype(float) + valQuestion1_BOW_rep.multiply(valQuestion2_BOW_rep).astype(float)
 
     y_train = train_lables
-    y_val = train_lables
+    y_val = val_lables
 
     if dense==1:
-        X_tr = X_tr.toarray()
+        X_train = X_train.toarray()
         X_val =  X_val.toarray()
 
     featureExtractionDurationInMinutes = (time.time()-featureExtractionStartTime)/60.0
     print("feature extraction took %.2f minutes" % (featureExtractionDurationInMinutes))
+    return BagOfWordsExtractor, X_train, X_val, y_train, y_val
  
 
-def load_train(train_file='../downloads/train.csv', na_mode='empty'):
+def load_train(train_file='../downloads/train.csv', na_mode='empty', test_size=0.2):
     trainDFPrime = pd.read_csv(train_file)
     trainDFPrime = trainDFPrime.fillna(na_mode)
     print(trainDFPrime.ix[:7,3:])
     print(trainDFPrime.ix[5][3])
     print(trainDFPrime.ix[5][4])
-    trainDF , valDF = train_test_split(trainDFPrime, test_size = 0.2)
+    trainDF , valDF = train_test_split(trainDFPrime, test_size = test_size)
+    return trainDF, valDF
 
 
 
 
 def load_test(test_file='../downloads/test.csv'):
-    testDF = pd.read_csv(train_file)
+    testDF = pd.read_csv(test_file)
     testDF.ix[testDF['question1'].isnull(),['question1','question2']] = 'random empty question'
     testDF.ix[testDF['question2'].isnull(),['question1','question2']] = 'random empty question'
+    return testDF
    
 
-def process_test(BagOfWordsExtractor,testDF=testDF, dense=1, stem=False):
+def process_test(BagOfWordsExtractor,testDF, dense=1, stem=False):
     testloadStartTime = time.time()
+    stop_words = ['the','a','an','and','but','if','or','because','as','what','which','this','that','these','those','then',
+              'just','so','than','such','both','through','about','for','is','of','while','during','to','What','Which',
+              'Is','If','While','This']
+
 
     test_question1 = []
-    process_questions(test_question1, testDF.question1, 'test_question1', testDF, stem=stem)
+    process_questions(test_question1, testDF.question1, 'test_question1', testDF, stem=stem, stop_words=stop_words)
     test_question2 = []
-    process_questions(test_question2, testDF.question2, 'test_question2', testDF, stem=stem)
+    process_questions(test_question2, testDF.question2, 'test_question2', testDF, stem=stem, stop_words=stop_words)
 
     testQuestion1_BOW_rep = BagOfWordsExtractor.transform(test_question1)
     testQuestion2_BOW_rep = BagOfWordsExtractor.transform(test_question2)
@@ -220,10 +283,11 @@ def process_test(BagOfWordsExtractor,testDF=testDF, dense=1, stem=False):
     X_test = -(testQuestion1_BOW_rep != testQuestion2_BOW_rep).astype(int) + testQuestion1_BOW_rep.multiply(testQuestion2_BOW_rep)
 
     if dense==1:
-        test = X_test.toarray()
+        X_test = X_test.toarray()
 
     testLoadDurationInMinutes = (time.time()-testloadStartTime)/60.0
     print("Process Test %.2f minutes" % (testLoadDurationInMinutes))
+    return X_test
 
 
 def get_model_params():
@@ -239,7 +303,8 @@ def restore_model_params(model_params):
     tf.get_default_session().run(assign_ops, feed_dict=feed_dict)
 
 
-def tensor(n_inputs=100, n_hidden=[500,300], n_outputs=2, momentum=0.9, learning_rate=0.1, batch_normal=1, dropout_rate=0.5, activation=tf.nn.relu, n_epochs=2, batch_size=250):
+#def tensor(n_inputs=100, n_hidden=[500,300], n_outputs=2, momentum=0.9, learning_rate=0.1, batch_normal=1, dropout_rate=0.5, activation=tf.nn.relu, n_epochs=2, batch_size=250):
+def tensor(length,X_train,y_train,X_val, y_val,n_inputs=10, n_hidden=[500,300], n_outputs=2, momentum=0.9, learning_rate=0.1, batch_normal=1, dropout_rate=0.5, activation=tf.nn.relu, n_epochs=2, batch_size=250):
     now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     root_logdir = "tf_logs"
     logdir = "{}/run-{}/".format(root_logdir, now)
@@ -295,7 +360,7 @@ def tensor(n_inputs=100, n_hidden=[500,300], n_outputs=2, momentum=0.9, learning
         loss = tf.reduce_mean(xentropy, name="loss")
 
     with tf.name_scope("train"):
-        optimizer = tf.train.AdamOptimizer(learning_rate)
+        optimizer = tf.train.AdamOptimizer(learning_rate , name="optimizer")
         training_op = optimizer.minimize(loss)
 
     with tf.name_scope("eval"):
@@ -306,12 +371,19 @@ def tensor(n_inputs=100, n_hidden=[500,300], n_outputs=2, momentum=0.9, learning
         init = tf.global_variables_initializer()
         saver = tf.train.Saver()
         
+    tf.add_to_collection('train_op', optimizer)
+    tf.add_to_collection('cost_op', loss)
+    tf.add_to_collection('input', X)
+    tf.add_to_collection('target', y)
+    tf.add_to_collection('pred', correct)
+        
     loss_summary = tf.summary.scalar('Log Loss', loss)
     file_writer = tf.summary.FileWriter(logdir, tf.get_default_graph())
     
     
     n_epochs = n_epochs
     batch_size = batch_size
+    n_batches = len(X_train) // batch_size
 
 
 
@@ -321,9 +393,12 @@ def tensor(n_inputs=100, n_hidden=[500,300], n_outputs=2, momentum=0.9, learning
     with tf.Session() as sess:
         init.run(session=sess)
         for epoch in range(n_epochs):
-            for iteration in range(len(X_train) // batch_size):
-                X_batch, y_batch = fetch_batch(X_train, y_train,epoch, iteration, batch_size)
+            for iteration in range(n_batches):
+                
+                
+                X_batch, y_batch = fetch_batch(X_train, y_train,epoch, n_batches, iteration, batch_size)
                 sess.run([training_op, extra_update_ops], feed_dict={is_training: True, X: X_batch, y: y_batch})
+                
             summary_str = loss_summary.eval(feed_dict={is_training: False, X: X_val, y: y_val})
             file_writer.add_summary(summary_str, epoch)
             acc_train = accuracy.eval(feed_dict={is_training: False, X: X_batch, y: y_batch})
@@ -343,7 +418,7 @@ def tensor(n_inputs=100, n_hidden=[500,300], n_outputs=2, momentum=0.9, learning
     return tf.Graph()
 
 
-def tensor_load(n_inputs=100, n_hidden=[500,300], n_outputs=2, momentum=0.9, learning_rate=0.1, batch_normal=1, dropout_rate=0.5, activation=tf.nn.relu, n_epochs=2, batch_size=250):
+def tensor_load(length,test, n_inputs=100, n_hidden=[500,300], n_outputs=2, momentum=0.9, learning_rate=0.1, batch_normal=1, dropout_rate=0.5, activation=tf.nn.relu, n_epochs=2, batch_size=250, prediction_length=1000):
     now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     root_logdir = "tf_logs"
     logdir = "{}/run-{}/".format(root_logdir, now)
@@ -430,10 +505,10 @@ def tensor_load(n_inputs=100, n_hidden=[500,300], n_outputs=2, momentum=0.9, lea
 
     with tf.Session() as sess:
     #save_path = saver.save(sess, "./my_model_final.ckpt")
-        saver.restore(sess, "./my_model_final.ckpt") #"my_model_final.ckpt")
-        for i in range(2346):
+        saver.restore(sess, "./my_model_final.ckpt") #"my_model_final.ckpt"
+        for i in range(int(np.ceil(length/prediction_length))):
             print ('Iter : %s' % i)
-            X_new_scaled = test[i*1000:(i+1)*1000]
+            X_new_scaled = test[i*prediction_length:(i+1)*prediction_length]
             Z = logits.eval(feed_dict={is_training:False ,X: X_new_scaled})
             prob = sess.run(tf.nn.softmax(Z))
             predictions.append((prob))
@@ -447,17 +522,17 @@ def tensor_load(n_inputs=100, n_hidden=[500,300], n_outputs=2, momentum=0.9, lea
 
 def convert_to_output(predictions, length, to_csv=0, filename='Submission'):
     output = list()
-    for i in range(len(pred)):
-        for j in range(len(pred[i])):
-            output.append(pred[i][j][0])
+    for i in range(len(predictions)):
+        for j in range(len(predictions[i])):
+            output.append(predictions[i][j][0])
         
     output = pd.DataFrame(output)
     if to_csv==1:
         submission = pd.DataFrame()
-    submission['test_id'] = testDF['test_id']
-    submission['is_duplicate'] = output
-    #submission.head()
-    submission.to_csv('../downloads/submission_NN_tf2.csv', index=False)
+        submission['test_id'] = testDF['test_id']
+        submission['is_duplicate'] = output
+        #submission.head()
+        submission.to_csv('../downloads/submission_NN_tf2.csv', index=False)
 
         return submission
     else:
@@ -466,9 +541,9 @@ def convert_to_output(predictions, length, to_csv=0, filename='Submission'):
 
 
 
-def fetch_batch(data,label,epoch, batch_index, batch_size):
+def fetch_batch(data,label,epoch,n_batches,batch_index, batch_size):
     rnd.seed(epoch * n_batches + batch_index)          # not shown in the book
-    indices = rnd.randint(m, size=batch_size)          # not shown
+    indices = rnd.randint(len(data), size=batch_size)          # not shown
     X_batch = data[indices]   # not shown
     y_batch = label[indices]   # not shown
     return X_batch, y_batch
